@@ -217,11 +217,13 @@ def run_pipeline_with_progress(
     # Step 5: Label Correction
     status_updater("Applying label corrections...", "running")
     step_start = time.time()
-    corrections = get_corrections(detection["pred_classes"], flagged)
+    corrections = get_corrections(
+        detection["pred_classes"], flagged, all_probs=detection["all_probs"]
+    )
     corrected_labels = noisy_labels.copy()
     for idx, new_label in corrections.items():
         corrected_labels[idx] = new_label
-    logger.log(f"Corrected {len(corrections):,} labels")
+    logger.log(f"Corrected {len(corrections):,} / {n_flagged:,} flagged labels (low-confidence skipped)")
     progress_bar(_STEP_WEIGHTS[5], "Step 5/7: Labels corrected")
     logger.log(f"Label correction completed ({time.time() - step_start:.1f}s)")
 

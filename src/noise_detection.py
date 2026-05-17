@@ -18,11 +18,11 @@ def detect_noisy_labels(
     device: str | torch.device | None = None,
     batch_size: int = 128,
 ) -> dict[str, Any]:
-    """Flag samples where model confidence disagrees with given label or is low.
+    """Flag samples where model confidently predicts a different class.
 
     A sample is flagged as noisy if:
-    - The model's predicted class != given label, OR
-    - The model's confidence (max prob) for the given label < threshold
+    - The model's predicted class != given label, AND
+    - The model's confidence (max prob) > threshold
 
     Returns:
         dict with:
@@ -61,8 +61,8 @@ def detect_noisy_labels(
 
     given_labels = np.asarray(given_labels).flatten()
     pred_mismatch = all_pred_classes != given_labels
-    low_confidence = all_confidences < confidence_threshold
-    is_predicted_noisy = pred_mismatch | low_confidence
+    high_conf_pred = all_confidences > confidence_threshold
+    is_predicted_noisy = pred_mismatch & high_conf_pred
     flagged_indices = np.where(is_predicted_noisy)[0].tolist()
 
     return {
@@ -110,10 +110,8 @@ def detect_noisy_labels_with_probs(
     given_labels = np.asarray(given_labels).flatten()
 
     pred_mismatch = all_pred_classes != given_labels
-    conf_for_given = all_probs[np.arange(n), given_labels]
-    low_confidence = conf_for_given < confidence_threshold
-
-    is_predicted_noisy = pred_mismatch | low_confidence
+    high_conf_pred = all_confidences > confidence_threshold
+    is_predicted_noisy = pred_mismatch & high_conf_pred
     flagged_indices = np.where(is_predicted_noisy)[0].tolist()
 
     return {
@@ -145,6 +143,18 @@ def compute_detection_metrics(
 def get_corrections(
     pred_classes: np.ndarray,
     flagged_indices: list[int] | np.ndarray,
+    all_probs: np.ndarray | None = None,
+    min_correction_confidence: float = 0.5,
 ) -> dict[int, int]:
-    """Suggest corrected labels for flagged samples based on model predictions."""
-    return {int(i): int(pred_classes[i]) for i in flagged_indices}
+    """Suggest corrected labels for flagged samples based on model predictions.
+
+    When *all_probs* is provided, only corrections where the model's
+    confidence in its predicted class exceeds *min_correction_confidence*
+    are included.
+    """
+    corrections: dict[int, int] = {}
+    for i in flagged_indices:
+        if all_probs is not None and all_probs[i].max() < min_correction_confidence:
+            continue
+        corrections[int(i)] = int(pred_classes[i])
+    return corrections

@@ -1,8 +1,19 @@
+# Core
 torch
 torchvision
-streamlit
 numpy
+Pillow
+scikit-learn
+
+# UI / app
+streamlit
+
+# Plotting + article
 matplotlib
 seaborn
-scikit-learn
-Pillow
+python-docx
+
+# Optional: 3LC SDK for per-sample metrics, dataset tables, and Dashboard
+# integration (see run_3lc_pipeline.py). The Dashboard itself is a separate
+# desktop app you download from https://3lc.ai/download.
+3lc

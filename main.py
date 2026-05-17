@@ -4,6 +4,7 @@
 import argparse
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -101,15 +102,31 @@ def run_pipeline(
     flagged = detection["flagged_indices"]
     pred_noisy = detection["is_predicted_noisy"]
     det_metrics = compute_detection_metrics(pred_noisy, noise_mask)
+    n_total = len(noisy_labels)
+    print(f"Flagged {len(flagged):,} / {n_total:,} samples as noisy ({len(flagged)/n_total:.1%})")
     print(f"Detection Precision: {det_metrics['precision']:.4f}")
     print(f"Detection Recall: {det_metrics['recall']:.4f}")
     print(f"Detection F1: {det_metrics['f1']:.4f}")
 
+    expected_noisy = max(1, int(round(n_total * noise_rate)))
+    min_expected_flags = max(50, int(0.1 * expected_noisy))
+    if len(flagged) < min_expected_flags:
+        print(
+            "\nWarning: Very few samples were flagged compared to the injected noise rate. "
+            "With very high noise or a weak Phase 1 model, the detector rarely sees a "
+            "confident prediction that disagrees with the given label, so corrections "
+            "do not run. Try: lower --confidence-threshold (e.g. 0.35), reduce "
+            "--noise-rate (e.g. 0.2–0.4), or use more epochs so Phase 1 is stronger."
+        )
+
     # Correct labels and retrain (phase 2)
-    corrections = get_corrections(detection["pred_classes"], flagged)
+    corrections = get_corrections(
+        detection["pred_classes"], flagged, all_probs=detection["all_probs"]
+    )
     corrected_labels = noisy_labels.copy()
     for idx, new_label in corrections.items():
         corrected_labels[idx] = new_label
+    print(f"Applied {len(corrections):,} label corrections")
 
     corrected_dataset = create_noisy_dataset(train_dataset, corrected_labels)
     corrected_train_loader = torch.utils.data.DataLoader(
@@ -135,25 +152,25 @@ def run_pipeline(
     # Save plots
     fig1 = plot_training_curves(history)
     fig1.savefig(Path(output_dir) / "training_curves_phase1.png", dpi=120)
-    fig1.close()
+    plt.close(fig1)
 
     fig2 = plot_training_curves(history2)
     fig2.savefig(Path(output_dir) / "training_curves_phase2.png", dpi=120)
-    fig2.close()
+    plt.close(fig2)
 
     fig3 = plot_confusion_matrix(cm, CIFAR10_CLASSES)
     fig3.savefig(Path(output_dir) / "confusion_matrix_before.png", dpi=120)
-    fig3.close()
+    plt.close(fig3)
 
     fig4 = plot_confusion_matrix(cm2, CIFAR10_CLASSES)
     fig4.savefig(Path(output_dir) / "confusion_matrix_after.png", dpi=120)
-    fig4.close()
+    plt.close(fig4)
 
     fig5 = plot_confidence_distribution(
         detection["confidences"], noise_mask
     )
     fig5.savefig(Path(output_dir) / "confidence_distribution.png", dpi=120)
-    fig5.close()
+    plt.close(fig5)
 
     # Sample noisy and corrected
     n_show = min(10, len(flagged))
@@ -167,7 +184,7 @@ def run_pipeline(
             title="Incorrect Labels (True vs Given)",
         )
         fig6.savefig(Path(output_dir) / "incorrect_labels.png", dpi=120)
-        fig6.close()
+        plt.close(fig6)
 
     print(f"\nPlots saved to {output_dir}/")
     return {
@@ -189,7 +206,12 @@ def main():
         "--noise-rate",
         type=float,
         default=0.2,
-        help="Fraction of labels to corrupt (0.0-1.0)",
+        help=(
+            "Fraction of labels to corrupt (0.0-1.0). "
+            "Values above ~0.5 often collapse Phase 1 accuracy; confident mismatch "
+            "detection may then flag almost nothing unless you lower "
+            "--confidence-threshold."
+        ),
     )
     parser.add_argument(
         "--epochs",
