@@ -223,3 +223,7 @@ __marimo__/
 *.m4a
 *.jpg
 generate_article.py
+.matplotlib_cache/
+
+# CIFAR-10 dataset (downloaded automatically by torchvision on first run)
+data/
